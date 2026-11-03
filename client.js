@@ -1168,7 +1168,7 @@ window.__ModuleLoader__.load({
       }, [status.loggedIn, qrOpen])
 
       useEffect(() => {
-        if (status.browser !== 'ready' || step === 1) return undefined
+        if (status.browser !== 'ready' || step !== 0) return undefined
         const timer = setInterval(() => {
           setShotOk(true)
           setShotAt(Date.now())
@@ -2800,24 +2800,6 @@ window.__ModuleLoader__.load({
             ]),
           ])
         })(),
-        h('div', { key: 'historyCard', className: 'xhs-card' }, [
-          h('div', { key: 'body', className: 'xhs-cardBody' }, [
-            h('div', { key: 'head', className: 'xhs-cardHead' }, [
-              h('span', { key: 'l', className: 'xhs-label' }, '发布记录'),
-              h('span', { key: 'c', className: 'xhs-muted' }, history.length + ' 条'),
-            ]),
-            history.length ? h('div', { key: 'list', className: 'xhs-notes' }, history.slice(0, 5).map((item) => h('div', {
-              key: item.id, className: 'xhs-note',
-            }, [
-              h('div', { key: 't', className: 'xhs-noteTitle' }, item.title),
-              h('div', { key: 'm', className: 'xhs-muted' }, new Date(item.at).toLocaleString() + ' · ' + item.images + ' 张 · ' + (item.published ? '已发布' : '已提交')),
-              h('div', { key: 'a', className: 'xhs-row' }, [
-                h('button', { key: 'open', type: 'button', className: 'xhs-btn', 'data-kind': 'small', onClick: () => openHistory(item) }, '查看'),
-                h('button', { key: 'del', type: 'button', className: 'xhs-btn', 'data-kind': 'small', onClick: () => deleteHistory(item.id) }, '删除'),
-              ]),
-            ]))) : h('div', { key: 'empty', className: 'xhs-muted' }, '发布成功后会自动记在这里；点「查看」在右侧浏览器打开笔记管理'),
-          ]),
-        ]),
       ])
 
       const reviewStatusText = { pending: '待审核', publishing: '发布中', published: '已发布', failed: '失败', cancelled: '已驳回', scheduled: '已错峰定时' }
@@ -3113,7 +3095,6 @@ window.__ModuleLoader__.load({
       ])
 
       const reviewStep = h('div', { key: 'review', style: { display: 'flex', flexDirection: 'column', gap: '12px' } }, [
-        riskConfigCard,
         h('div', { key: 'pendingCard', className: 'xhs-card' }, [
           h('div', { key: 'body', className: 'xhs-cardBody' }, [
             h('div', { key: 'head', className: 'xhs-cardHead' }, [
@@ -3129,24 +3110,6 @@ window.__ModuleLoader__.load({
             pendingRecords.length
               ? pendingRecords.map(pendingRecord)
               : h('div', { key: 'empty', className: 'xhs-muted' }, '没有待审核的分组。让 Agent 用指令生成分组，会先出现在这里。'),
-          ]),
-        ]),
-        h('div', { key: 'historyCard', className: 'xhs-card' }, [
-          h('div', { key: 'body', className: 'xhs-cardBody' }, [
-            h('div', { key: 'head', className: 'xhs-cardHead' }, [
-              h('span', { key: 'l', className: 'xhs-label' }, '发布记录'),
-              h('div', { key: 'right', style: { display: 'flex', gap: '6px', alignItems: 'center' } }, [
-                h('span', { key: 'c', className: 'xhs-muted' }, historyRecords.length + ' 条'),
-                historyRecords.length ? h('button', {
-                  key: 'toggle', type: 'button', className: 'xhs-btn', 'data-kind': 'small',
-                  onClick: () => setShowStagingHistory((value) => !value),
-                }, showStagingHistory ? '收起' : '展开') : null,
-              ]),
-            ]),
-            showStagingHistory && historyRecords.length
-              ? h('div', { key: 'list', className: 'xhs-historyList' }, historyRecords.map(historyRecord))
-              : null,
-            historyRecords.length ? null : h('div', { key: 'empty', className: 'xhs-muted' }, '还没有历史记录'),
           ]),
         ]),
         (() => {
