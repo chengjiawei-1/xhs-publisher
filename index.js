@@ -3599,6 +3599,16 @@ export function apply(ctx, rawConfig = {}) {
         const schedule = deleteSchedule(String(body.id || ''))
         return sendJson(res, 200, { ok: true, schedule })
       }
+      case '/browser/reload': {
+        const result = await exclusive('重新加载页面', async () => {
+          const current = await page()
+          const url = await current.eval('location.href')
+          await current.goto(url, 3200)
+          invalidateShot()
+          return { url }
+        })
+        return sendJson(res, 200, { ok: true, ...result })
+      }
       case '/browser/close': {
         await exclusive('关闭浏览器', async () => { await stopBrowser() })
         return sendJson(res, 200, { ok: true })

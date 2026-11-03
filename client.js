@@ -1947,8 +1947,7 @@ window.__ModuleLoader__.load({
           const data = await api('/group/commit', { id: groupPreview.id })
           await loadStaging()
           setGroupPreview(null)
-          setStep(2)
-          setMoreTab('staging')
+          setStep(0)
           say('已放入审核：' + (data.record?.jobs?.length || 0) + ' 组', 'ok')
         } catch (error) {
           say(error.message, 'error')
@@ -2201,7 +2200,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         let stop = false
-        api('/knowledge').then((data) => {
+        api('/knowledge', {}).then((data) => {
           if (!stop) setKnowledge({ root: data.root || '', files: Array.isArray(data.files) ? data.files : [] })
         }).catch(() => {})
         return () => { stop = true }
@@ -2209,7 +2208,7 @@ window.__ModuleLoader__.load({
 
       const loadKnowledge = async () => {
         try {
-          const data = await api('/knowledge')
+          const data = await api('/knowledge', {})
           setKnowledge({ root: data.root || '', files: Array.isArray(data.files) ? data.files : [] })
           say('知识包已重新读取', 'ok')
         } catch (error) { say(error.message, 'error') }
@@ -2229,7 +2228,7 @@ window.__ModuleLoader__.load({
         try {
           await api('/knowledge/save', { path: knowledgeFile, text: knowledgeText })
           say('已保存，规则文件会立即生效', 'ok')
-          const data = await api('/knowledge')
+          const data = await api('/knowledge', {})
           setKnowledge({ root: data.root || '', files: Array.isArray(data.files) ? data.files : [] })
         } catch (error) { say(error.message, 'error') }
         finally { setKnowledgeBusy(false) }
@@ -2252,7 +2251,6 @@ window.__ModuleLoader__.load({
         h('div', { key: 'steps', className: 'xhs-steps' }, [
           ['发布', 0],
           ['知识', 1],
-          ['更多', 2],
         ].map(([label, index]) => h('button', {
           key: index,
           type: 'button',
@@ -2297,6 +2295,18 @@ window.__ModuleLoader__.load({
             disabled: status.browser !== 'ready' || busy,
             onClick: () => { setShotOk(true); setShotAt(Date.now()) },
           }, t('action.refresh')),
+          h('button', {
+            key: 'reload', type: 'button', className: 'xhs-btn',
+            disabled: status.browser !== 'ready' || busy,
+            onClick: async () => {
+              try {
+                await api('/browser/reload', {})
+                setShotOk(true)
+                setShotAt(Date.now())
+                say('页面已重新加载', 'ok')
+              } catch (error) { say(error.message, 'error') }
+            },
+          }, '重载页面'),
           h('button', {
             key: 'checkAll', type: 'button', className: 'xhs-btn',
             disabled: booting || busy || healthBusy, onClick: checkAllAccounts,
@@ -3151,8 +3161,7 @@ window.__ModuleLoader__.load({
         say,
         onCommitted: async () => {
           await loadStaging()
-          setStep(2)
-          setMoreTab('staging')
+          setStep(0)
         },
       }))
 
@@ -3204,7 +3213,7 @@ window.__ModuleLoader__.load({
         moreTab === 'staging' ? reviewStep : groupView,
       ])
 
-      const bodyContent = step === 0 ? publishTab : step === 1 ? knowledgeView : moreView
+      const bodyContent = step === 0 ? publishTab : knowledgeView
 
 
       const riskWordModal = riskWordOpen ? h('div', {
@@ -3289,10 +3298,7 @@ window.__ModuleLoader__.load({
         h('div', { key: 'recent', className: 'xhs-statusRecent' }, [
           h('span', { key: 't' }, recentText),
           pendingStaging
-            ? h('button', {
-                key: 'go', type: 'button', className: 'xhs-btn', 'data-kind': 'small',
-                onClick: () => { setStep(2); setMoreTab('staging') },
-              }, '待审核 ' + pendingStaging + ' 组 · 去审核')
+            ? h('span', { key: 'go', className: 'xhs-muted' }, '待审核 ' + pendingStaging + ' 组')
             : null,
         ]),
       ])
