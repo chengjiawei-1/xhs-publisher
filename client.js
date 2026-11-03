@@ -554,6 +554,40 @@ window.__ModuleLoader__.load({
       .xhs-modalCard { border-radius:16px; padding:16px; }
       .xhs-accountModal, .xhs-previewModal { width:min(560px,94%); }
       .xhs-addTab { height:34px; border-radius:9px; }
+
+      /* 简约皮肤：少边框、少阴影、更多留白 */
+      .xhs-shell { --xhs-ink:#1f2a24; --xhs-line:#e7e3da; --xhs-accent:#2f5d4a; background:transparent; }
+      .xhs-head { padding:14px 14px 4px; background:transparent; border-bottom:0; }
+      .xhs-title { font-weight:600; letter-spacing:.02em; color:var(--xhs-ink); }
+      .xhs-steps { gap:20px; border-bottom:1px solid var(--xhs-line); }
+      .xhs-step { background:none; border:0; padding:6px 0 9px; border-radius:0; color:#7b857f; font-size:12.5px; }
+      .xhs-step[data-active=true] { color:var(--xhs-accent); font-weight:600; box-shadow:inset 0 -2px 0 var(--xhs-accent); }
+      .xhs-stepIndex { display:none; }
+      .xhs-card { border:0; border-bottom:1px solid var(--xhs-line); border-radius:0; background:transparent; box-shadow:none; }
+      .xhs-cardBody { padding:12px 0; }
+      .xhs-label { font-weight:600; color:var(--xhs-ink); }
+      .xhs-btn { border-radius:8px; box-shadow:none; }
+      .xhs-btn[data-kind=primary] { background:var(--xhs-accent); border-color:var(--xhs-accent); }
+      .xhs-input, .xhs-textarea { border-radius:8px; background:#fbfaf7; }
+      .xhs-drop { border-radius:10px; border-style:solid; background:#fbfaf7; }
+      .xhs-know { display:flex; flex-direction:column; gap:10px; padding:4px 0 18px; }
+      .xhs-knowHead { display:flex; flex-direction:column; gap:2px; }
+      .xhs-knowTitle { font-size:13px; font-weight:600; color:var(--xhs-ink); }
+      .xhs-knowPath { font-size:10.5px; color:#8a919c; word-break:break-all; }
+      .xhs-knowList { display:flex; flex-direction:column; max-height:190px; overflow:auto; border-top:1px solid var(--xhs-line); }
+      .xhs-knowItem { display:flex; flex-direction:column; gap:1px; text-align:left; padding:7px 2px; border:0; border-bottom:1px solid var(--xhs-line); background:none; cursor:pointer; }
+      .xhs-knowItem:hover { background:#fbfaf7; }
+      .xhs-knowItem[data-active=true] { color:var(--xhs-accent); }
+      .xhs-knowName { font-size:12px; }
+      .xhs-knowDir { font-size:10px; color:#9aa39d; }
+      .xhs-knowEdit { display:flex; flex-direction:column; gap:6px; }
+      .xhs-knowEditBar { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .xhs-knowEditPath { font-size:10.5px; color:#8a919c; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .xhs-knowText { min-height:240px; font-family:ui-monospace, Consolas, monospace; font-size:11px; line-height:1.55; }
+      .xhs-knowHint { font-size:11.5px; color:#8a919c; line-height:1.65; padding:6px 0; }
+      .xhs-seg { display:inline-flex; gap:4px; background:#f2f0ea; padding:3px; border-radius:9px; align-self:flex-start; }
+      .xhs-segBtn { border:0; background:none; padding:5px 10px; border-radius:7px; font-size:11.5px; color:#6f7872; cursor:pointer; }
+      .xhs-segBtn[data-active=true] { background:#fff; color:var(--xhs-accent); box-shadow:0 1px 2px rgba(0,0,0,.06); }
     `
 
     // ------------------------------------------------------------------ 图标
@@ -1052,6 +1086,12 @@ window.__ModuleLoader__.load({
       const [riskWordText, setRiskWordText] = useState('')
       const [riskWordBusy, setRiskWordBusy] = useState(false)
 
+      const [knowledge, setKnowledge] = useState({ root: '', files: [] })
+      const [knowledgeFile, setKnowledgeFile] = useState('')
+      const [knowledgeText, setKnowledgeText] = useState('')
+      const [knowledgeBusy, setKnowledgeBusy] = useState(false)
+      const [moreTab, setMoreTab] = useState('staging')
+
       const busy = Boolean(status.busy) || generating || drafting || submitting || smsBusy
 
       const accountLabel = (name) => {
@@ -1284,7 +1324,7 @@ window.__ModuleLoader__.load({
           event.preventDefault()
           event.stopPropagation()
           event.stopImmediatePropagation()
-          if (step === 1) setDragOver(true)
+          if (step === 0) setDragOver(true)
         }
         const onDrop = (event) => {
           if (insideGroup(event)) return
@@ -1293,7 +1333,7 @@ window.__ModuleLoader__.load({
           event.stopPropagation()
           event.stopImmediatePropagation()
           setDragOver(false)
-          if (step === 1) addFiles(event.dataTransfer?.files)
+          if (step === 0) addFiles(event.dataTransfer?.files)
         }
         const onLeave = (event) => {
           if (!insidePanel(event)) return
@@ -1907,7 +1947,8 @@ window.__ModuleLoader__.load({
           const data = await api('/group/commit', { id: groupPreview.id })
           await loadStaging()
           setGroupPreview(null)
-          setStep(1)
+          setStep(2)
+          setMoreTab('staging')
           say('已放入审核：' + (data.record?.jobs?.length || 0) + ' 组', 'ok')
         } catch (error) {
           say(error.message, 'error')
@@ -2158,6 +2199,47 @@ window.__ModuleLoader__.load({
       if (!title.trim()) missing.push('标题')
       if (!body.trim()) missing.push('正文')
 
+      useEffect(() => {
+        let stop = false
+        api('/knowledge').then((data) => {
+          if (!stop) setKnowledge({ root: data.root || '', files: Array.isArray(data.files) ? data.files : [] })
+        }).catch(() => {})
+        return () => { stop = true }
+      }, [])
+
+      const loadKnowledge = async () => {
+        try {
+          const data = await api('/knowledge')
+          setKnowledge({ root: data.root || '', files: Array.isArray(data.files) ? data.files : [] })
+          say('知识包已重新读取', 'ok')
+        } catch (error) { say(error.message, 'error') }
+      }
+
+      const openKnowledgeFile = async (rel) => {
+        try {
+          const data = await api('/knowledge/file', { path: rel })
+          setKnowledgeFile(rel)
+          setKnowledgeText(data.text || '')
+        } catch (error) { say(error.message, 'error') }
+      }
+
+      const saveKnowledgeFile = async () => {
+        if (!knowledgeFile) return
+        setKnowledgeBusy(true)
+        try {
+          await api('/knowledge/save', { path: knowledgeFile, text: knowledgeText })
+          say('已保存，规则文件会立即生效', 'ok')
+          const data = await api('/knowledge')
+          setKnowledge({ root: data.root || '', files: Array.isArray(data.files) ? data.files : [] })
+        } catch (error) { say(error.message, 'error') }
+        finally { setKnowledgeBusy(false) }
+      }
+
+      const revealKnowledge = async (rel) => {
+        try { await api('/knowledge/open', rel ? { path: rel } : {}) }
+        catch (error) { say(error.message, 'error') }
+      }
+
       const head = h('div', { className: 'xhs-head' }, [
         h('div', { key: 'row', className: 'xhs-titleRow' }, [
           h('span', { key: 'title', className: 'xhs-title' }, t('tab.title')),
@@ -2168,9 +2250,9 @@ window.__ModuleLoader__.load({
           }, busy ? t('status.busy') : status.loggedIn ? t('status.loggedIn') + (status.nickname ? ' · ' + status.nickname : '') : status.browser === 'ready' ? t('status.loggedOut') : t('status.browserOff')),
         ]),
         h('div', { key: 'steps', className: 'xhs-steps' }, [
-          [t('step.login'), 0],
-          ['审核', 1],
-          ['分组', 2],
+          ['发布', 0],
+          ['知识', 1],
+          ['更多', 2],
         ].map(([label, index]) => h('button', {
           key: index,
           type: 'button',
@@ -3106,11 +3188,60 @@ window.__ModuleLoader__.load({
         say,
         onCommitted: async () => {
           await loadStaging()
-          setStep(1)
+          setStep(2)
+          setMoreTab('staging')
         },
       }))
 
-      const bodyContent = step === 0 ? loginStep : step === 1 ? reviewStep : groupView
+      const publishTab = h('div', { key: 'publishTab', style: { display: 'flex', flexDirection: 'column', gap: '12px' } }, [
+        loginStep,
+        publishStep,
+      ])
+
+      const knowledgeView = h('div', { key: 'knowledge', className: 'xhs-know' }, [
+        h('div', { key: 'head', className: 'xhs-knowHead' }, [
+          h('div', { key: 't', className: 'xhs-knowTitle' }, '本地知识包'),
+          h('div', { key: 'p', className: 'xhs-knowPath', title: knowledge.root }, knowledge.root || '（还没有路径）'),
+        ]),
+        h('div', { key: 'actions', className: 'xhs-row' }, [
+          h('button', { key: 'open', type: 'button', className: 'xhs-btn', onClick: () => revealKnowledge('') }, '打开文件夹'),
+          h('button', { key: 'reload', type: 'button', className: 'xhs-btn', onClick: loadKnowledge }, '重新读取'),
+        ]),
+        h('div', { key: 'files', className: 'xhs-knowList' }, knowledge.files.map((file) => h('button', {
+          key: file.path, type: 'button', className: 'xhs-knowItem',
+          'data-active': knowledgeFile === file.path,
+          onClick: () => openKnowledgeFile(file.path),
+        }, [
+          h('span', { key: 'n', className: 'xhs-knowName' }, file.name),
+          h('span', { key: 'd', className: 'xhs-knowDir' }, file.path.split('/').slice(0, -1).join(' / ')),
+        ]))),
+        knowledgeFile
+          ? h('div', { key: 'edit', className: 'xhs-knowEdit' }, [
+            h('div', { key: 'bar', className: 'xhs-knowEditBar' }, [
+              h('span', { key: 'p', className: 'xhs-knowEditPath' }, knowledgeFile),
+              h('div', { key: 'a', className: 'xhs-row' }, [
+                h('button', { key: 's', type: 'button', className: 'xhs-btn', 'data-kind': 'primary', disabled: knowledgeBusy, onClick: saveKnowledgeFile }, knowledgeBusy ? '保存中…' : '保存'),
+                h('button', { key: 'o', type: 'button', className: 'xhs-btn', onClick: () => revealKnowledge(knowledgeFile) }, '用编辑器打开'),
+              ]),
+            ]),
+            h('textarea', {
+              key: 'ta', className: 'xhs-textarea xhs-knowText', value: knowledgeText,
+              spellCheck: false,
+              onChange: (event) => setKnowledgeText(event.target.value),
+            }),
+          ])
+          : h('div', { key: 'hint', className: 'xhs-knowHint' }, '点上面的文件查看或修改。品牌、产品、标题公式、违禁词、发布记录都在这里。'),
+      ])
+
+      const moreView = h('div', { key: 'more', style: { display: 'flex', flexDirection: 'column', gap: '12px' } }, [
+        h('div', { key: 'seg', className: 'xhs-seg' }, [
+          h('button', { key: 's', type: 'button', className: 'xhs-segBtn', 'data-active': moreTab === 'staging', onClick: () => setMoreTab('staging') }, '审核与记录'),
+          h('button', { key: 'g', type: 'button', className: 'xhs-segBtn', 'data-active': moreTab === 'group', onClick: () => setMoreTab('group') }, '分组'),
+        ]),
+        moreTab === 'staging' ? reviewStep : groupView,
+      ])
+
+      const bodyContent = step === 0 ? publishTab : step === 1 ? knowledgeView : moreView
 
 
       const riskWordModal = riskWordOpen ? h('div', {
@@ -3197,7 +3328,7 @@ window.__ModuleLoader__.load({
           pendingStaging
             ? h('button', {
                 key: 'go', type: 'button', className: 'xhs-btn', 'data-kind': 'small',
-                onClick: () => setStep(1),
+                onClick: () => { setStep(2); setMoreTab('staging') },
               }, '待审核 ' + pendingStaging + ' 组 · 去审核')
             : null,
         ]),

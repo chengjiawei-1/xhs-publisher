@@ -1,9 +1,9 @@
 {
   "name": "@local/xhs-publisher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Xiaohongshu studio in the right sidebar: sign in, collage images with a centered title, generate copy, and fill the publish page.",
+  "description": "Xiaohongshu studio in the right sidebar: sign in, compose with a local knowledge pack, and fill the publish page for human confirmation.",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -16,6 +16,7 @@
     "risk.js",
     "collage.py",
     "cordis.patch.yml",
+    "knowledge/**",
     "locale/*.json",
     "icon.svg",
     "README.md"

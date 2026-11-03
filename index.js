@@ -75,6 +75,7 @@ const SAMPLE_TEMPLATE = `请为我生成 {{count}} 组独立成套、可直接�
 
 const DEFAULTS = {
   dataDir: '',
+  knowledgeDir: '',
   chromePath: '',
   direct: true,
   windowPosition: '-2400,0',
@@ -172,7 +173,17 @@ class Page {
     if (this.closed) return Promise.reject(new Error('CDP 连接已关闭'))
     const id = ++this.nextId
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
+      // 渲染进程卡死时 CDP 不会回包；没有超时会让 busy 永远停在“处理中”。
+      const timer = setTimeout(() => {
+        this.pending.delete(id)
+        this.closed = true
+        try { this.ws.close() } catch {}
+        reject(new Error('CDP 命令超时: ' + method))
+      }, 20000)
+      this.pending.set(id, {
+        resolve: (value) => { clearTimeout(timer); resolve(value) },
+        reject: (error) => { clearTimeout(timer); reject(error) },
+      })
       this.ws.send(JSON.stringify({ id, method, params }))
     })
   }
@@ -283,6 +294,96 @@ export function apply(ctx, rawConfig = {}) {
   const outDir = path.join(dataDir, 'out')
   for (const dir of [dataDir, profileDir, accountsDir, shotDir, outDir]) {
     try { fs.mkdirSync(dir, { recursive: true }) } catch {}
+  }
+
+  // ---------------------------------------------------------------- 本地知识包
+  // 品牌、产品、写法、规则、发布记录全部放这一个文件夹里，用文本编辑器就能改。
+  const knowledgeDir = config.knowledgeDir || path.join(os.homedir(), 'Documents', '江陈记小红书知识包')
+
+  function seedKnowledge() {
+    try {
+      fs.mkdirSync(knowledgeDir, { recursive: true })
+      const seedDir = path.join(PLUGIN_DIR, 'knowledge')
+      if (!fs.existsSync(seedDir)) return
+      const copy = (from, to) => {
+        fs.mkdirSync(to, { recursive: true })
+        for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+          const src = path.join(from, entry.name)
+          const dst = path.join(to, entry.name)
+          if (entry.isDirectory()) copy(src, dst)
+          else if (!fs.existsSync(dst)) fs.copyFileSync(src, dst)
+        }
+      }
+      copy(seedDir, knowledgeDir)
+    } catch (error) { log('知识包初始化失败', error) }
+  }
+  seedKnowledge()
+
+  function listKnowledge() {
+    const files = []
+    const walk = (dir) => {
+      let entries = []
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) { walk(full); continue }
+        let stat
+        try { stat = fs.statSync(full) } catch { continue }
+        files.push({
+          path: path.relative(knowledgeDir, full).replace(/\\/g, '/'),
+          name: entry.name,
+          size: stat.size,
+          mtime: stat.mtimeMs,
+        })
+      }
+    }
+    walk(knowledgeDir)
+    files.sort((a, b) => a.path.localeCompare(b.path, 'zh'))
+    return files
+  }
+
+  function safeKnowledgePath(rel) {
+    const root = path.resolve(knowledgeDir)
+    const full = path.resolve(root, String(rel || ''))
+    if (full !== root && !full.startsWith(root + path.sep)) throw new Error('路径不在知识包内')
+    return full
+  }
+
+  function readKnowledge(rel) {
+    return fs.readFileSync(safeKnowledgePath(rel), 'utf8')
+  }
+
+  function knowledgeContext() {
+    const parts = []
+    const add = (rel, max) => {
+      try {
+        const text = readKnowledge(rel).trim()
+        if (text) parts.push(`【${rel}】\n${text.slice(0, max)}`)
+      } catch {}
+    }
+    add('01_品牌/品牌卡.md', 2200)
+    add('01_品牌/产品卡.md', 3200)
+    add('02_内容/标题公式.md', 1800)
+    add('02_内容/正文结构.md', 1800)
+    add('02_内容/标签库.md', 1400)
+    add('03_规则/风控边界.md', 1600)
+    return parts.join('\n\n').slice(0, 11000)
+  }
+
+  /** 发布成功后往知识包的发布记录里追加一行，方便回看。 */
+  function appendPublishRecord(record) {
+    try {
+      const file = path.join(knowledgeDir, '04_记录', '发布记录.md')
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      if (!fs.existsSync(file)) {
+        fs.writeFileSync(file, '# 发布记录\n\n| 时间 | 账号 | 标题 | 图片数 | 结果 |\n|---|---|---|---|---|\n')
+      }
+      const time = new Date(record.at || Date.now()).toLocaleString('zh-CN', { hour12: false })
+      const title = String(record.title || '（无标题）').replace(/\|/g, '｜').replace(/\r?\n/g, ' ')
+      const line = `| ${time} | ${record.account || 'default'} | ${title} | ${record.images || 0} | ${record.published ? '已发布' : '待确认'} |\n`
+      fs.appendFileSync(file, line)
+    } catch (error) { log('发布记录追加失败', error) }
   }
 
   // ---------------------------------------------------------------- 文案库
@@ -404,13 +505,22 @@ export function apply(ctx, rawConfig = {}) {
   }
 
   const riskFile = path.join(dataDir, 'risk-words.json')
+  const riskKnowledgeFile = path.join(knowledgeDir, '03_规则', '违禁词.md')
   let riskRules = DEFAULT_RULES
 
   function saveRiskRules() {
-    try { fs.writeFileSync(riskFile, JSON.stringify(riskRules, null, 2)) } catch (error) { log('词库写入失败', error) }
+    try {
+      const text = '# 违禁词库\n\n> 一行一个：等级|类别|词|建议。改完在面板点「重新读取」生效。\n\n' + rulesToText(riskRules) + '\n'
+      fs.writeFileSync(riskKnowledgeFile, text)
+    } catch (error) { log('词库写入失败', error) }
   }
 
   function loadRiskRules() {
+    try {
+      const text = fs.readFileSync(riskKnowledgeFile, 'utf8')
+      riskRules = parseRulesText(text)
+      return
+    } catch {}
     try {
       const raw = JSON.parse(fs.readFileSync(riskFile, 'utf8'))
       if (Array.isArray(raw) && raw.length) riskRules = raw
@@ -1106,6 +1216,7 @@ export function apply(ctx, rawConfig = {}) {
   async function generateCopy(prompt, imageCount, series) {
     const { provider, model } = resolveModel()
 
+    const pack = knowledgeContext()
     const system = [
       '你是一名资深小红书内容策划，擅长把普通素材包装成有点击欲、又不夸张失实的图文笔记。',
       '根据用户给的主题和要求，输出一条笔记的标题、正文和标签。',
@@ -1117,8 +1228,9 @@ export function apply(ctx, rawConfig = {}) {
       '5. 如果用户提示词里明确写了标题、正文、标签的数量或关键词规则，以用户提示词为准。',
       '6. 这次只输出 1 组笔记（即使用户要求多组），用 {"title","body","tags"} 的对象，不要输出 notes 数组。',
       '7. 如果提供了套系名称，标题和正文要自然带出这个套系名，不要生硬堆砌。',
+      pack ? `8. 下面是「江陈记」的本地知识库。品牌、产品事实、写法、规则都以它为准，不要写知识库里没有的事实：\n\n${pack}` : '',
       '只输出一个 JSON 对象，格式：{"title":"...","body":"...","tags":["...","..."]}，不要在 JSON 外输出任何内容。',
-    ].join('\n')
+    ].filter(Boolean).join('\n')
     const user = [
       `主题与要求：${prompt}`,
       `配图数量：${imageCount} 张拼图`,
@@ -1759,6 +1871,7 @@ export function apply(ctx, rawConfig = {}) {
     publishHistory.unshift(record)
     if (publishHistory.length > 50) publishHistory.length = 50
     saveHistory()
+    appendPublishRecord(record)
     invalidateShot()
     return {
       published,
@@ -3190,7 +3303,7 @@ export function apply(ctx, rawConfig = {}) {
       }
       case '/generate': {
         const result = await exclusive('生成文案', async () => await generateCopy(
-          String(body.prompt || '').trim() || '分享我的日常',
+          String(body.prompt || '').trim() || '按知识库里的品牌和产品，为这组图片写一条自然的小红书笔记',
           Number(body.imageCount) || 1,
           String(body.series || body.tone || '').trim(),
         ))
@@ -3220,6 +3333,37 @@ export function apply(ctx, rawConfig = {}) {
         riskConfig.manualOnly = incoming.manualOnly !== false
         saveRiskConfig()
         return sendJson(res, 200, { ok: true, config: riskSettings() })
+      }
+      case '/knowledge': {
+        return sendJson(res, 200, { ok: true, root: knowledgeDir, files: listKnowledge() })
+      }
+      case '/knowledge/file': {
+        const rel = String(body.path || '')
+        if (!rel) return sendJson(res, 400, { ok: false, error: '缺少文件路径' })
+        return sendJson(res, 200, { ok: true, path: rel, text: readKnowledge(rel) })
+      }
+      case '/knowledge/save': {
+        const rel = String(body.path || '')
+        if (!rel) return sendJson(res, 400, { ok: false, error: '缺少文件路径' })
+        fs.writeFileSync(safeKnowledgePath(rel), String(body.text ?? ''), 'utf8')
+        if (/03_规则[\\/]违禁词\.md$/.test(rel)) loadRiskRules()
+        return sendJson(res, 200, { ok: true })
+      }
+      case '/knowledge/open': {
+        const rel = String(body.path || '')
+        const target = rel ? safeKnowledgePath(rel) : knowledgeDir
+        if (!fs.existsSync(target)) return sendJson(res, 404, { ok: false, error: '文件不存在' })
+        try {
+          const child = spawn(process.platform === 'win32' ? 'explorer.exe' : 'xdg-open', [target], { detached: true, stdio: 'ignore' })
+          child.unref()
+        } catch (error) {
+          return sendJson(res, 500, { ok: false, error: '打开失败：' + error.message })
+        }
+        return sendJson(res, 200, { ok: true, target })
+      }
+      case '/knowledge/reload': {
+        loadRiskRules()
+        return sendJson(res, 200, { ok: true, root: knowledgeDir, files: listKnowledge().length })
       }
       case '/generate/batch': {
         const result = await exclusive('生成多组文案', async () => {
