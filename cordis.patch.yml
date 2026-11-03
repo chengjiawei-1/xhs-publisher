@@ -1,0 +1,4 @@
+- insert:
+    - id: xhs-publisher
+      name: '@local/xhs-publisher'
+      config: {}
